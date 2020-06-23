@@ -18,12 +18,21 @@ class UserInDB(User):
     date_created : datetime= Field(default_factory=datetime.utcnow)
 
 
-def get_user(username):
-    client = get_nosql_db()
-    db = client[getenv("MONGODB_NAME")]
-    collection = db["user"]
-    row = collection.find_one({'username':username})
-    if row is not None:
-        return row
-    else:
-        return False
+class Messages(BaseModel):
+    user : UserInDB
+    content : str = None
+
+
+class MessagesInDB(Messages):
+    _id : UUID = Field(default_factory=uuid4)
+    date_created : datetime= Field(default_factory=datetime.utcnow)
+
+class Room(BaseModel):
+    members : Optional[List[UserInDB]] = []
+    messages : Optional[List[MessagesInDB]] = []
+    last_message : datetime = Field(default_factory=datetime.utcnow)
+
+
+class RoomInDB(Room):
+    _id : UUID = Field(default_factory=uuid4)
+    date_created : datetime= Field(default_factory=datetime.utcnow)

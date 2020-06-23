@@ -1,4 +1,4 @@
-from fastapi import FastAPI, WebSocket, Request, Depends,Response, HTTPException, status
+from fastapi import FastAPI, Request, Depends,Response, HTTPException, status
 from fastapi.responses import HTMLResponse,JSONResponse
 from mongodb import get_mongo_connection,get_nosql_db,close_mongo_connection,AsyncIOMotorClient
 import import_env_file
@@ -9,21 +9,25 @@ from controller import(
     create_user,
     authenticate_user,
     create_access_token,
-    get_current_active_user
+    get_current_active_user,
+    insert_room
 )
 from models import(
     UserInDB,
     User
 )
-app = FastAPI()
+
 from pymongo.errors import (
     DuplicateKeyError,
     CollectionInvalid
     )
 from datetime import datetime, timedelta
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
+from notifier import Notifier
+from starlette.websockets import WebSocketDisconnect,WebSocket
+app = FastAPI(debug=True)
 
-
+notifier = Notifier()
 
 
 html = """
@@ -63,13 +67,14 @@ html = """
 @app.on_event("startup")
 async def startup_event():
     await get_mongo_connection()
+    await notifier.generator.asend(None)
     try:
         client = await get_nosql_db()
         db = client[getenv("MONGODB_NAME")]
         collection = db["user"]
         await collection.create_index("username",name="username",unique=True)
-        await db.create_collection("rooms")
-        await db["rooms"].create_index("room_name",name="room_name",unique=True)
+        await db.create_collection("room")
+        
     except CollectionInvalid as e:
         logging.info(e)
         pass
@@ -88,10 +93,18 @@ async def get():
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
-    await websocket.accept()
-    while True:
-        data = await websocket.receive_text()
-        await websocket.send_text(f"Message text was: {data}")
+    await notifier.connect(websocket)
+    try:
+        while True:
+            data = await websocket.receive_text()
+            await notifier.push(f"Message text was: {data}")
+    except WebSocketDisconnect:
+        notifier.remove(websocket)
+
+
+@app.get("/push/{message}")
+async def push_to_connected_websockets(message: str):
+    await notifier.push(f"! Push notification: {message} !")
 
 
 
@@ -132,7 +145,6 @@ async def register_user(request:RegisterRequest,client:AsyncIOMotorClient=Depend
 
 @app.post("/token", response_model=Token)
 async def login_for_access_token(request:LoginRequest):
-    print("Reached Here")
     user = await authenticate_user(request.username, request.password)
     if not user:
         raise HTTPException(
@@ -155,3 +167,13 @@ async def read_users_me(current_user: User = Depends(get_current_active_user)):
 @app.get("/users/me/items/")
 async def read_own_items(current_user: User = Depends(get_current_active_user)):
     return [{"item_id": "Foo", "owner": current_user.username}]
+
+
+
+@app.post("/room/create")
+async def read_users_me(current_user:User=Depends(get_current_active_user),client:AsyncIOMotorClient=Depends(get_nosql_db)):
+    return await insert_room(current_user,client)
+
+
+
+

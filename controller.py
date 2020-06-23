@@ -2,19 +2,27 @@
 
 import hashlib
 import uuid
-from models import User,UserInDB
+from models import (
+    User,
+    UserInDB,
+    Messages,
+    MessagesInDB,
+    Room,
+    RoomInDB
+    )
 import jwt 
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from jwt import PyJWTError
-from passlib.context import CryptContext
 from datetime import datetime, timedelta
 import import_env_file
 from os import getenv
 from mongodb import get_nosql_db
 from pydantic import BaseModel
 from fastapi import Depends, FastAPI, HTTPException, status
+from pymongo.errors import DuplicateKeyError
+from starlette.responses import JSONResponse
 
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/token")
 
 class Token(BaseModel):
@@ -35,6 +43,7 @@ def create_user(request):
     user = User(**user)
     print(user)
     return user
+
 
 
 async def get_user(username: str):
@@ -69,7 +78,6 @@ def create_access_token(data: dict, expires_delta: timedelta = None):
     return encoded_jwt
 
 async def get_current_user(token: str = Depends(oauth2_scheme)):
-    print("over here")
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Could not validate credentials",
@@ -78,7 +86,6 @@ async def get_current_user(token: str = Depends(oauth2_scheme)):
     try:
         payload = jwt.decode(token, getenv("SECRET_KEY"), algorithm=[getenv("ALGORITHM")])
         username: str = payload.get("sub")
-        print(username)
         if username is None:
             raise credentials_exception
         token_data = TokenData(username=username)
@@ -93,4 +100,23 @@ async def get_current_user(token: str = Depends(oauth2_scheme)):
 
 async def get_current_active_user(current_user: User = Depends(get_current_user)):
     return current_user
+
+
+async def insert_room(user,client):
+    
+    try:
+        collection = client[getenv("MONGODB_NAME")]["room"]
+        room = {}
+        room["members"] = [user] if user is not None else []
+        room["messages"] = []
+        dbuser = RoomInDB(**room)
+        response  = await collection.insert_one(dbuser.dict())
+        return {
+            "room_id":str(response.inserted_id)
+        }
+    except DuplicateKeyError as e:
+        print(e)
+        return JSONResponse(status_code=400,content={
+            "user_id":"duplicate entry"
+        })
 
