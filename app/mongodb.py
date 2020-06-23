@@ -2,6 +2,8 @@ from motor.motor_asyncio import AsyncIOMotorClient
 import logging
 import import_env_file
 import os
+from pymongo.errors import AutoReconnect
+
 
 class MonogDB:
     client: AsyncIOMotorClient = True
@@ -10,6 +12,7 @@ class MonogDB:
 db = MonogDB()
 
 async def get_nosql_db() -> AsyncIOMotorClient:
+    print("3")
     return db.client
 
 

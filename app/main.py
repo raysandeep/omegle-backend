@@ -19,7 +19,8 @@ from models import(
 
 from pymongo.errors import (
     DuplicateKeyError,
-    CollectionInvalid
+    CollectionInvalid,
+    AutoReconnect
     )
 from datetime import datetime, timedelta
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
@@ -67,17 +68,29 @@ html = """
 @app.on_event("startup")
 async def startup_event():
     await get_mongo_connection()
+    print("1")
     await notifier.generator.asend(None)
+    print("2")
+
     try:
         client = await get_nosql_db()
+        print("4")
         db = client[getenv("MONGODB_NAME")]
+        print("5")
         collection = db["user"]
+        # print(collection)
         await collection.create_index("username",name="username",unique=True)
+        print("7")
         await db.create_collection("room")
         
-    except CollectionInvalid as e:
-        logging.info(e)
+    except AutoReconnect as e:
+        logging.error(e)
         pass
+
+    except CollectionInvalid as e:
+        logging.error(e)
+        pass
+    
 
 
 
