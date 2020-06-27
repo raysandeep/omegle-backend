@@ -3,8 +3,7 @@ from datetime import datetime
 from uuid import UUID,uuid4
 from typing import List,Optional
 from mongodb import get_nosql_db
-import import_env_file
-from os import getenv
+
 
 
 class User(BaseModel):

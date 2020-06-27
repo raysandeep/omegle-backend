@@ -1,9 +1,13 @@
 from motor.motor_asyncio import AsyncIOMotorClient
 import logging
-import import_env_file
+# import import_env_file
 import os
 from pymongo.errors import AutoReconnect
-
+from config_params import( 
+    MONGODB_URL,
+    MIN_POOL_SIZE,
+    MAX_POOL_SIZE
+    )
 
 class MonogDB:
     client: AsyncIOMotorClient = True
@@ -18,9 +22,9 @@ async def get_nosql_db() -> AsyncIOMotorClient:
 
 async def get_mongo_connection():
     db.client = AsyncIOMotorClient(
-        str(os.getenv("MONGODB_URL")), 
-        maxPoolSize=int(os.getenv("MAX_POOL_SIZE")),
-        minPoolSize=int(os.getenv("MIN_POOL_SIZE")),
+        str(MONGODB_URL), 
+        maxPoolSize=int(MAX_POOL_SIZE),
+        minPoolSize=int(MIN_POOL_SIZE),
     )
     logging.info("Connected to Mongo Client")
 

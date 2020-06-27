@@ -14,14 +14,19 @@ import jwt
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from jwt import PyJWTError
 from datetime import datetime, timedelta
-import import_env_file
-from os import getenv
 from mongodb import get_nosql_db
 from pydantic import BaseModel
 from fastapi import Depends, FastAPI, HTTPException, status
 from pymongo.errors import DuplicateKeyError
 from starlette.responses import JSONResponse
-
+from config_params import( 
+    MONGODB_URL,
+    MIN_POOL_SIZE,
+    MAX_POOL_SIZE,
+    MONGODB_NAME,
+    SECRET_KEY,
+    ALGORITHM
+    )
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/token")
 
@@ -48,7 +53,7 @@ def create_user(request):
 
 async def get_user(username: str):
     client = await get_nosql_db()
-    users_db = client[getenv("MONGODB_NAME")]["user"]
+    users_db = client[MONGODB_NAME]["user"]
     row = await users_db.find_one({"username":username})
     if row is not None:
         return UserInDB(**row)
@@ -74,7 +79,7 @@ def create_access_token(data: dict, expires_delta: timedelta = None):
     else:
         expire = datetime.utcnow() + timedelta(minutes=15)
     to_encode.update({"exp": expire})
-    encoded_jwt = jwt.encode(to_encode, getenv("SECRET_KEY"), algorithm=getenv("ALGORITHM")).decode('utf-8')
+    encoded_jwt = jwt.encode(to_encode,SECRET_KEY, algorithm=ALGORITHM).decode('utf-8')
     return encoded_jwt
 
 async def get_current_user(token: str = Depends(oauth2_scheme)):
@@ -84,7 +89,7 @@ async def get_current_user(token: str = Depends(oauth2_scheme)):
         headers={"WWW-Authenticate": "Bearer"},
     )
     try:
-        payload = jwt.decode(token, getenv("SECRET_KEY"), algorithm=[getenv("ALGORITHM")])
+        payload = jwt.decode(token, SECRET_KEY, algorithm=[ALGORITHM])
         username: str = payload.get("sub")
         if username is None:
             raise credentials_exception
@@ -105,7 +110,7 @@ async def get_current_active_user(current_user: User = Depends(get_current_user)
 async def insert_room(user,client):
     
     try:
-        collection = client[getenv("MONGODB_NAME")]["room"]
+        collection = client[MONGODB_NAME]["room"]
         room = {}
         room["members"] = [user] if user is not None else []
         room["messages"] = []

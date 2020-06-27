@@ -1,3 +1,6 @@
+from typing import List
+from starlette.responses import HTMLResponse
+from starlette.websockets import WebSocket, WebSocketDisconnect
 from fastapi import FastAPI, Request, Depends,Response, HTTPException, status
 from fastapi.responses import HTMLResponse,JSONResponse
 from mongodb import get_mongo_connection,get_nosql_db,close_mongo_connection,AsyncIOMotorClient
@@ -26,10 +29,9 @@ from datetime import datetime, timedelta
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from notifier import Notifier
 from starlette.websockets import WebSocketDisconnect,WebSocket
-app = FastAPI(debug=True)
 
-notifier = Notifier()
 
+app = FastAPI()
 
 html = """
 <!DOCTYPE html>
@@ -65,43 +67,44 @@ html = """
 </html>
 """
 
-@app.on_event("startup")
-async def startup_event():
-    await get_mongo_connection()
-    print("1")
-    await notifier.generator.asend(None)
-    print("2")
-
-    try:
-        client = await get_nosql_db()
-        print("4")
-        db = client[getenv("MONGODB_NAME")]
-        print("5")
-        collection = db["user"]
-        # print(collection)
-        await collection.create_index("username",name="username",unique=True)
-        print("7")
-        await db.create_collection("room")
-        
-    except AutoReconnect as e:
-        logging.error(e)
-        pass
-
-    except CollectionInvalid as e:
-        logging.error(e)
-        pass
-    
-
-
-
-@app.on_event("shutdown")
-async def startup_event():
-    await close_mongo_connection()
-
 
 @app.get("/")
 async def get():
     return HTMLResponse(html)
+
+
+class Notifier:
+    def __init__(self):
+        self.connections: List[WebSocket] = []
+        self.generator = self.get_notification_generator()
+
+    async def get_notification_generator(self):
+        while True:
+            message = yield
+            await self._notify(message)
+
+    async def push(self, msg: str):
+        await self.generator.asend(msg)
+
+    async def connect(self, websocket: WebSocket):
+        await websocket.accept()
+        self.connections.append(websocket)
+
+    def remove(self, websocket: WebSocket):
+        self.connections.remove(websocket)
+
+    async def _notify(self, message: str):
+        living_connections = []
+        while len(self.connections) > 0:
+            # Looping like this is necessary in case a disconnection is handled
+            # during await websocket.send_text(message)
+            websocket = self.connections.pop()
+            await websocket.send_text(message)
+            living_connections.append(websocket)
+        self.connections = living_connections
+
+
+notifier = Notifier()
 
 
 @app.websocket("/ws")
@@ -110,7 +113,7 @@ async def websocket_endpoint(websocket: WebSocket):
     try:
         while True:
             data = await websocket.receive_text()
-            await notifier.push(f"Message text was: {data}")
+            await websocket.send_text(f"Message text was: {data}")
     except WebSocketDisconnect:
         notifier.remove(websocket)
 
@@ -120,7 +123,10 @@ async def push_to_connected_websockets(message: str):
     await notifier.push(f"! Push notification: {message} !")
 
 
-
+@app.on_event("startup")
+async def startup():
+    # Prime the push notification generator
+    await notifier.generator.asend(None)
 
 class RegisterRequest(BaseModel):
     username : str
@@ -186,7 +192,3 @@ async def read_own_items(current_user: User = Depends(get_current_active_user)):
 @app.post("/room/create")
 async def read_users_me(current_user:User=Depends(get_current_active_user),client:AsyncIOMotorClient=Depends(get_nosql_db)):
     return await insert_room(current_user,client)
-
-
-
-
